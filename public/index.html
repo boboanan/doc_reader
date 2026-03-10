@@ -1,0 +1,1586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Doc Reader</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css">
+  <style>
+    :root {
+      --sidebar-width: 280px;
+      --header-height: 56px;
+      --bg-primary: #ffffff;
+      --bg-secondary: #f8f9fa;
+      --bg-sidebar: #fafbfc;
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --text-muted: #9ca3af;
+      --border-color: #e5e7eb;
+      --accent: #3b82f6;
+      --accent-light: #eff6ff;
+      --hover-bg: #f3f4f6;
+      --code-bg: #f6f8fa;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07);
+      --radius: 8px;
+    }
+
+    [data-theme="dark"] {
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-sidebar: #0d1117;
+      --text-primary: #e6edf3;
+      --text-secondary: #8b949e;
+      --text-muted: #6e7681;
+      --border-color: #30363d;
+      --accent: #58a6ff;
+      --accent-light: #1a2332;
+      --hover-bg: #1c2128;
+      --code-bg: #161b22;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.4);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      overflow: hidden;
+      height: 100vh;
+    }
+
+    /* ===== Header ===== */
+    .header {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: var(--header-height);
+      background: var(--bg-primary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      z-index: 100;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .header-logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: var(--sidebar-width);
+      padding-right: 20px;
+    }
+
+    .header-logo svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    .search-box {
+      flex: 1;
+      max-width: 500px;
+      position: relative;
+    }
+
+    .search-box input {
+      width: 100%;
+      padding: 8px 16px 8px 38px;
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      font-size: 14px;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .search-box input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+    }
+
+    .search-box .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+    }
+
+    .search-results {
+      position: absolute;
+      top: 100%;
+      left: 0; right: 0;
+      margin-top: 4px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-md);
+      max-height: 400px;
+      overflow-y: auto;
+      display: none;
+      z-index: 200;
+    }
+
+    .search-results.active { display: block; }
+
+    .search-result-item {
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border-color);
+      transition: background 0.15s;
+    }
+
+    .search-result-item:last-child { border-bottom: none; }
+    .search-result-item:hover { background: var(--hover-bg); }
+
+    .search-result-item .result-name {
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+
+    .search-result-item .result-snippet {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+
+    .btn-icon {
+      width: 36px;
+      height: 36px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+
+    .btn-icon:hover {
+      background: var(--hover-bg);
+      color: var(--text-primary);
+    }
+
+    /* ===== Layout ===== */
+    .layout {
+      display: flex;
+      margin-top: var(--header-height);
+      height: calc(100vh - var(--header-height));
+    }
+
+    /* ===== Sidebar ===== */
+    .sidebar {
+      width: var(--sidebar-width);
+      min-width: var(--sidebar-width);
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border-color);
+      overflow-y: auto;
+      padding: 16px 0;
+      transition: transform 0.3s;
+    }
+
+    .sidebar.collapsed {
+      transform: translateX(-100%);
+      min-width: 0;
+      width: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .sidebar-section {
+      padding: 0 12px;
+      margin-bottom: 8px;
+    }
+
+    .sidebar-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      padding: 8px 12px;
+    }
+
+    .tree-item {
+      display: flex;
+      align-items: center;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--text-secondary);
+      transition: all 0.15s;
+      user-select: none;
+      margin: 1px 0;
+    }
+
+    .tree-item:hover {
+      background: var(--hover-bg);
+      color: var(--text-primary);
+    }
+
+    .tree-item.active {
+      background: var(--accent-light);
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .tree-item .icon {
+      width: 18px;
+      height: 18px;
+      margin-right: 8px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .tree-item .icon svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .tree-folder-children {
+      padding-left: 16px;
+      overflow: hidden;
+      transition: max-height 0.25s ease;
+    }
+
+    .tree-folder-children.collapsed {
+      max-height: 0 !important;
+    }
+
+    .tree-item .chevron {
+      width: 16px;
+      height: 16px;
+      margin-right: 4px;
+      flex-shrink: 0;
+      transition: transform 0.2s;
+      color: var(--text-muted);
+    }
+
+    .tree-item .chevron.open {
+      transform: rotate(90deg);
+    }
+
+    /* ===== Content ===== */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 40px;
+      scroll-behavior: smooth;
+    }
+
+    .content-inner {
+      max-width: 820px;
+      margin: 0 auto;
+    }
+
+    /* ===== Welcome Screen ===== */
+    .welcome {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 70%;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .welcome svg {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 24px;
+      opacity: 0.3;
+    }
+
+    .welcome h2 {
+      font-size: 24px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .welcome p {
+      font-size: 14px;
+    }
+
+    /* ===== Markdown Styles ===== */
+    .markdown-body {
+      font-size: 16px;
+      line-height: 1.8;
+      color: var(--text-primary);
+      word-wrap: break-word;
+    }
+
+    .markdown-body h1 {
+      font-size: 2em;
+      font-weight: 800;
+      margin: 0 0 24px 0;
+      padding-bottom: 12px;
+      border-bottom: 2px solid var(--border-color);
+    }
+
+    .markdown-body h2 {
+      font-size: 1.5em;
+      font-weight: 700;
+      margin: 40px 0 16px 0;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .markdown-body h3 {
+      font-size: 1.25em;
+      font-weight: 600;
+      margin: 32px 0 12px 0;
+    }
+
+    .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+      font-size: 1em;
+      font-weight: 600;
+      margin: 24px 0 8px 0;
+    }
+
+    .markdown-body p {
+      margin: 0 0 16px 0;
+    }
+
+    .markdown-body a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .markdown-body a:hover { text-decoration: underline; }
+
+    .markdown-body strong { font-weight: 700; }
+
+    .markdown-body ul, .markdown-body ol {
+      padding-left: 2em;
+      margin: 0 0 16px 0;
+    }
+
+    .markdown-body li {
+      margin: 4px 0;
+    }
+
+    .markdown-body li > p {
+      margin: 0;
+    }
+
+    .markdown-body blockquote {
+      padding: 4px 16px;
+      margin: 0 0 16px 0;
+      border-left: 4px solid var(--accent);
+      background: var(--bg-secondary);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      color: var(--text-secondary);
+    }
+
+    .markdown-body blockquote p:last-child { margin-bottom: 0; }
+
+    .markdown-body code {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 0.875em;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+
+    .markdown-body pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin: 0 0 16px 0;
+      overflow-x: auto;
+      position: relative;
+    }
+
+    .markdown-body pre code {
+      background: transparent;
+      border: none;
+      padding: 0;
+      font-size: 0.875em;
+      line-height: 1.6;
+    }
+
+    .markdown-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0 0 16px 0;
+      font-size: 14px;
+    }
+
+    .markdown-body table th,
+    .markdown-body table td {
+      border: 1px solid var(--border-color);
+      padding: 8px 12px;
+      text-align: left;
+    }
+
+    .markdown-body table th {
+      background: var(--bg-secondary);
+      font-weight: 600;
+    }
+
+    .markdown-body table tr:nth-child(even) {
+      background: var(--bg-secondary);
+    }
+
+    .markdown-body hr {
+      border: none;
+      border-top: 2px solid var(--border-color);
+      margin: 32px 0;
+    }
+
+    .markdown-body img {
+      max-width: 100%;
+      border-radius: var(--radius);
+    }
+
+    /* ===== TOC (Table of Contents) ===== */
+    .toc-panel {
+      position: fixed;
+      right: 20px;
+      top: calc(var(--header-height) + 20px);
+      width: 220px;
+      max-height: calc(100vh - var(--header-height) - 40px);
+      overflow-y: auto;
+      padding: 12px;
+      font-size: 12px;
+      display: none;
+    }
+
+    .toc-panel.visible { display: block; }
+
+    .toc-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .toc-item {
+      display: block;
+      padding: 4px 8px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-radius: 4px;
+      line-height: 1.5;
+      transition: all 0.15s;
+      cursor: pointer;
+    }
+
+    .toc-item:hover {
+      background: var(--hover-bg);
+      color: var(--text-primary);
+    }
+
+    .toc-item.active {
+      color: var(--accent);
+      background: var(--accent-light);
+    }
+
+    .toc-item.toc-h3 { padding-left: 20px; }
+    .toc-item.toc-h4 { padding-left: 32px; }
+
+    /* ===== Breadcrumb ===== */
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+
+    .breadcrumb span { cursor: default; }
+    .breadcrumb .sep { color: var(--border-color); }
+
+    /* ===== Reading progress ===== */
+    .reading-progress {
+      position: fixed;
+      top: var(--header-height);
+      left: 0; right: 0;
+      height: 3px;
+      background: transparent;
+      z-index: 99;
+    }
+
+    .reading-progress .bar {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.1s;
+    }
+
+    /* ===== Scrollbar ===== */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 1100px) {
+      .toc-panel { display: none !important; }
+    }
+
+    @media (max-width: 768px) {
+      :root { --sidebar-width: 260px; }
+      .sidebar {
+        position: fixed;
+        top: var(--header-height);
+        left: 0;
+        bottom: 0;
+        z-index: 90;
+        box-shadow: var(--shadow-md);
+      }
+      .sidebar.collapsed {
+        transform: translateX(-100%);
+      }
+      .content { padding: 24px 16px; }
+    }
+
+    /* Animation */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .markdown-body {
+      animation: fadeIn 0.3s ease;
+    }
+
+    /* ===== Translate Button ===== */
+    .translate-mode-group {
+      display: none;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .translate-mode-group.visible {
+      display: inline-flex;
+    }
+
+    .translate-mode-select {
+      padding: 5px 10px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      border-radius: 20px 0 0 20px;
+      font-size: 12px;
+      cursor: pointer;
+      outline: none;
+      appearance: none;
+      -webkit-appearance: none;
+      padding-right: 22px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24'%3E%3Cpath fill='%236b7280' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 6px center;
+      transition: all 0.2s;
+    }
+
+    .translate-mode-select:hover {
+      border-color: var(--accent);
+    }
+
+    .btn-translate {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      border-radius: 0 20px 20px 0;
+      border-left: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .btn-translate.standalone {
+      border-radius: 20px;
+      border-left: 1px solid var(--border-color);
+    }
+
+    .btn-translate:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-light);
+    }
+
+    .btn-translate.translating {
+      opacity: 0.7;
+      cursor: wait;
+    }
+
+    .btn-translate.translated {
+      border-color: #10b981;
+      color: #10b981;
+      background: rgba(16, 185, 129, 0.08);
+    }
+
+    .btn-translate svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .translate-bar {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      background: var(--accent-light);
+      border: 1px solid rgba(59,130,246,0.2);
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .translate-bar.visible {
+      display: flex;
+    }
+
+    .translate-bar .translate-info {
+      flex: 1;
+    }
+
+    .translate-bar .btn-restore {
+      padding: 4px 12px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-primary);
+      color: var(--text-secondary);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.15s;
+    }
+
+    .translate-bar .btn-restore:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* LLM Settings Modal */
+    .llm-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .llm-modal-overlay.visible {
+      display: flex;
+    }
+
+    .llm-modal {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 24px;
+      width: 480px;
+      max-width: 90vw;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    }
+
+    .llm-modal h3 {
+      margin: 0 0 16px;
+      font-size: 16px;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .llm-modal .form-group {
+      margin-bottom: 14px;
+    }
+
+    .llm-modal label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+
+    .llm-modal input, .llm-modal select {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      font-size: 13px;
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    .llm-modal input:focus, .llm-modal select:focus {
+      border-color: var(--accent);
+    }
+
+    .llm-modal .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 4px;
+    }
+
+    .llm-modal .status-dot.online { background: #10b981; }
+    .llm-modal .status-dot.offline { background: #ef4444; }
+    .llm-modal .status-dot.checking { background: #f59e0b; animation: pulse 1s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .llm-modal .btn-row {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .llm-modal .btn-secondary {
+      padding: 8px 16px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .llm-modal .btn-primary {
+      padding: 8px 16px;
+      border: none;
+      background: var(--accent);
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .btn-llm-settings {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+      margin-left: -2px;
+    }
+
+    .btn-llm-settings:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-llm-settings.visible {
+      display: inline-flex;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border-color);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+      </svg>
+      Doc Reader
+    </div>
+
+    <div class="search-box">
+      <span class="search-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+        </svg>
+      </span>
+      <input type="text" id="searchInput" placeholder="搜索文档内容... (Ctrl+K)" autocomplete="off">
+      <div class="search-results" id="searchResults"></div>
+    </div>
+
+    <div class="header-actions">
+      <div class="translate-mode-group" id="translateGroup">
+        <select class="translate-mode-select" id="translateMode" title="翻译模式">
+          <option value="api">在线翻译</option>
+          <option value="llm">本地大模型</option>
+        </select>
+        <button class="btn-translate" id="translateBtn" title="一键翻译为中文 (Ctrl+T)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/>
+            <path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>
+          </svg>
+          <span id="translateBtnText">翻译为中文</span>
+        </button>
+        <button class="btn-llm-settings" id="btnLlmSettings" title="LLM 设置">
+          ⚙
+        </button>
+      </div>
+      <button class="btn-icon" id="toggleSidebar" title="切换侧栏">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>
+        </svg>
+      </button>
+      <button class="btn-icon" id="toggleTheme" title="切换主题">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Reading Progress -->
+  <div class="reading-progress"><div class="bar" id="progressBar"></div></div>
+
+  <!-- Layout -->
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-title" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>文档项目</span>
+          <div style="display:flex;gap:4px;">
+            <button class="btn-icon" id="btnScan" title="重新扫描" style="width:24px;height:24px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6"/><path d="M2.5 22v-6h6"/>
+                <path d="M2.5 11.5a10 10 0 0 1 18.8-4.3"/>
+                <path d="M21.5 12.5a10 10 0 0 1-18.8 4.2"/>
+              </svg>
+            </button>
+            <button class="btn-icon" id="btnSetDir" title="设置扫描目录" style="width:24px;height:24px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div id="scanDirInfo" style="padding:4px 12px 8px;font-size:11px;color:var(--text-muted);word-break:break-all;"></div>
+        <div id="fileTree"></div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="content" id="mainContent">
+      <div class="content-inner" id="contentInner">
+        <div class="welcome">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+          </svg>
+          <h2>欢迎使用 Doc Reader</h2>
+          <p>从左侧目录选择一个文档开始阅读</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- TOC Panel -->
+  <div class="toc-panel" id="tocPanel">
+    <div class="toc-title">目录</div>
+    <div id="tocList"></div>
+  </div>
+
+  <!-- LLM Settings Modal -->
+  <div class="llm-modal-overlay" id="llmModalOverlay">
+    <div class="llm-modal">
+      <h3>🤖 本地大模型设置</h3>
+      <div class="form-group">
+        <label>服务状态</label>
+        <div id="llmStatusText"><span class="status-dot checking"></span>检测中...</div>
+      </div>
+      <div class="form-group">
+        <label>API 地址</label>
+        <input type="text" id="llmBaseUrl" placeholder="http://127.0.0.1:1234/v1" />
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="text" id="llmApiKey" placeholder="lmstudio" />
+      </div>
+      <div class="form-group">
+        <label>模型</label>
+        <select id="llmModelSelect">
+          <option value="">自动检测</option>
+        </select>
+      </div>
+      <div class="btn-row">
+        <button class="btn-secondary" id="btnRefreshLlm">🔄 刷新状态</button>
+        <button class="btn-secondary" id="btnCloseLlm">取消</button>
+        <button class="btn-primary" id="btnSaveLlm">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/typescript.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/json.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/yaml.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/css.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/sql.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/markdown.min.js"></script>
+
+  <script>
+    // ===== State =====
+    let currentPath = null;
+    let treeData = null;
+    let searchTimeout = null;
+    let originalMarkdown = null;  // 存储原始 Markdown 内容
+    let isTranslated = false;     // 当前是否为翻译状态
+
+    // ===== Marked Configuration =====
+    marked.setOptions({
+      gfm: true,
+      breaks: false,
+      highlight: function(code, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+          try { return hljs.highlight(code, { language: lang }).value; } catch(e) {}
+        }
+        try { return hljs.highlightAuto(code).value; } catch(e) {}
+        return code;
+      },
+    });
+
+    // ===== Init =====
+    document.addEventListener('DOMContentLoaded', () => {
+      loadConfig();
+      loadTree();
+      setupEvents();
+      loadTheme();
+      initTranslateMode();
+
+      // Handle URL hash
+      if (location.hash) {
+        const path = decodeURIComponent(location.hash.slice(1));
+        if (path) loadDocument(path);
+      }
+    });
+
+    // ===== Load config =====
+    async function loadConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        document.getElementById('scanDirInfo').textContent = data.scanDir;
+      } catch (e) {
+        console.error('Failed to load config:', e);
+      }
+    }
+
+    // ===== Load tree =====
+    async function loadTree() {
+      try {
+        const res = await fetch('/api/tree');
+        treeData = await res.json();
+        const fileTree = document.getElementById('fileTree');
+        fileTree.innerHTML = '';
+        const projects = treeData.children || [];
+        if (projects.length === 0) {
+          fileTree.innerHTML = '<div style="padding:12px;font-size:13px;color:var(--text-muted);text-align:center;">未发现 doc 目录<br><span style="font-size:11px;">点击右上角 📁 设置扫描目录</span></div>';
+          return;
+        }
+        renderTree(projects, fileTree, 0);
+      } catch (e) {
+        console.error('Failed to load tree:', e);
+      }
+    }
+
+    // ===== Scan =====
+    async function rescan() {
+      const btn = document.getElementById('btnScan');
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
+      try {
+        await fetch('/api/scan', { method: 'POST' });
+        await loadTree();
+      } catch (e) {
+        console.error('Scan failed:', e);
+      } finally {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+      }
+    }
+
+    async function setScanDir() {
+      const current = document.getElementById('scanDirInfo').textContent || '';
+      const newDir = prompt('请输入要扫描的目录路径：', current);
+      if (!newDir || newDir === current) return;
+
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scanDir: newDir }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || '设置失败');
+          return;
+        }
+        document.getElementById('scanDirInfo').textContent = data.scanDir;
+        await loadTree();
+      } catch (e) {
+        alert('设置失败: ' + e.message);
+      }
+    }
+
+    // ===== Render tree =====
+    function renderTree(items, container, depth) {
+      items.forEach(item => {
+        if (item.type === 'folder') {
+          // Folder item
+          const folderEl = document.createElement('div');
+
+          const labelEl = document.createElement('div');
+          labelEl.className = 'tree-item';
+          labelEl.style.paddingLeft = `${12 + depth * 12}px`;
+          labelEl.innerHTML = `
+            <svg class="chevron open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m9 18 6-6-6-6"/>
+            </svg>
+            <span class="icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+            </span>
+            <span>${item.name}</span>
+          `;
+
+          const childrenEl = document.createElement('div');
+          childrenEl.className = 'tree-folder-children';
+
+          labelEl.addEventListener('click', () => {
+            const chevron = labelEl.querySelector('.chevron');
+            chevron.classList.toggle('open');
+            childrenEl.classList.toggle('collapsed');
+          });
+
+          folderEl.appendChild(labelEl);
+          folderEl.appendChild(childrenEl);
+          container.appendChild(folderEl);
+
+          renderTree(item.children || [], childrenEl, depth + 1);
+
+        } else if (item.type === 'file') {
+          const fileEl = document.createElement('div');
+          fileEl.className = 'tree-item';
+          fileEl.dataset.path = item.path;
+          fileEl.style.paddingLeft = `${12 + depth * 12 + 20}px`;
+          fileEl.innerHTML = `
+            <span class="icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/>
+              </svg>
+            </span>
+            <span>${item.name}</span>
+          `;
+
+          fileEl.addEventListener('click', () => loadDocument(item.path));
+          container.appendChild(fileEl);
+        }
+      });
+    }
+
+    // ===== Load Document =====
+    async function loadDocument(docPath) {
+      try {
+        currentPath = docPath;
+        location.hash = encodeURIComponent(docPath);
+
+        // Update active state in sidebar
+        document.querySelectorAll('.tree-item').forEach(el => {
+          el.classList.toggle('active', el.dataset.path === docPath);
+        });
+
+        const res = await fetch(`/api/doc?path=${encodeURIComponent(docPath)}`);
+        if (!res.ok) throw new Error('Failed to load');
+
+        const data = await res.json();
+        originalMarkdown = data.content;   // 保存原始内容
+        isTranslated = false;
+        const html = marked.parse(data.content);
+
+        // Build breadcrumb
+        const parts = docPath.split('/');
+        const fileName = parts.pop().replace('.md', '');
+        let breadcrumbHtml = '<div class="breadcrumb">';
+        breadcrumbHtml += '<span>📚</span>';
+        parts.forEach(part => {
+          breadcrumbHtml += `<span class="sep">/</span><span>${part}</span>`;
+        });
+        breadcrumbHtml += `<span class="sep">/</span><span style="color:var(--text-primary);font-weight:500;">${fileName}</span>`;
+        breadcrumbHtml += '</div>';
+
+        // 翻译状态栏
+        const translateBarHtml = '<div class="translate-bar" id="translateBar"><span class="translate-info" id="translateInfo"></span><button class="btn-restore" id="btnRestore" onclick="restoreOriginal()">显示原文</button></div>';
+
+        const contentInner = document.getElementById('contentInner');
+        contentInner.innerHTML = breadcrumbHtml + translateBarHtml + `<div class="markdown-body" id="markdownBody">${html}</div>`;
+
+        // 显示翻译按钮
+        updateTranslateBtn('ready');
+
+        // Build TOC
+        buildTOC();
+
+        // Scroll to top
+        document.getElementById('mainContent').scrollTop = 0;
+
+      } catch(e) {
+        console.error('Failed to load document:', e);
+        document.getElementById('contentInner').innerHTML =
+          '<div class="welcome"><h2>加载失败</h2><p>无法加载文档，请稍后重试</p></div>';
+      }
+    }
+
+    // ===== Build TOC =====
+    function buildTOC() {
+      const tocPanel = document.getElementById('tocPanel');
+      const tocList = document.getElementById('tocList');
+      const headings = document.querySelectorAll('.markdown-body h2, .markdown-body h3, .markdown-body h4');
+
+      if (headings.length === 0) {
+        tocPanel.classList.remove('visible');
+        return;
+      }
+
+      tocList.innerHTML = '';
+      headings.forEach((heading, index) => {
+        const id = `heading-${index}`;
+        heading.id = id;
+
+        const tocItem = document.createElement('a');
+        tocItem.className = `toc-item toc-${heading.tagName.toLowerCase()}`;
+        tocItem.textContent = heading.textContent;
+        tocItem.addEventListener('click', () => {
+          heading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+        tocList.appendChild(tocItem);
+      });
+
+      tocPanel.classList.add('visible');
+
+      // Highlight active TOC item on scroll
+      const content = document.getElementById('mainContent');
+      content.addEventListener('scroll', updateActiveTOC);
+    }
+
+    function updateActiveTOC() {
+      const headings = document.querySelectorAll('.markdown-body h2, .markdown-body h3, .markdown-body h4');
+      const tocItems = document.querySelectorAll('.toc-item');
+      const content = document.getElementById('mainContent');
+      const scrollTop = content.scrollTop;
+
+      let activeIndex = 0;
+      headings.forEach((heading, i) => {
+        if (heading.offsetTop - 100 <= scrollTop) {
+          activeIndex = i;
+        }
+      });
+
+      tocItems.forEach((item, i) => {
+        item.classList.toggle('active', i === activeIndex);
+      });
+
+      // Update progress bar
+      const progressBar = document.getElementById('progressBar');
+      const scrollHeight = content.scrollHeight - content.clientHeight;
+      const progress = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0;
+      progressBar.style.width = `${progress}%`;
+    }
+
+    // ===== Search =====
+    async function performSearch(query) {
+      const resultsEl = document.getElementById('searchResults');
+
+      if (!query.trim()) {
+        resultsEl.classList.remove('active');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+        const results = await res.json();
+
+        if (results.length === 0) {
+          resultsEl.innerHTML = '<div class="search-result-item"><div class="result-name">没有找到结果</div></div>';
+        } else {
+          resultsEl.innerHTML = results.map(r => `
+            <div class="search-result-item" data-path="${r.path}">
+              <div class="result-name">${r.name}</div>
+              <div class="result-snippet">${escapeHtml(r.snippet)}</div>
+            </div>
+          `).join('');
+
+          resultsEl.querySelectorAll('.search-result-item[data-path]').forEach(el => {
+            el.addEventListener('click', () => {
+              loadDocument(el.dataset.path);
+              resultsEl.classList.remove('active');
+              document.getElementById('searchInput').value = '';
+            });
+          });
+        }
+
+        resultsEl.classList.add('active');
+      } catch(e) {
+        console.error('Search failed:', e);
+      }
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // ===== Theme =====
+    function toggleTheme() {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+      localStorage.setItem('theme', isDark ? 'light' : 'dark');
+    }
+
+    function loadTheme() {
+      const saved = localStorage.getItem('theme');
+      if (saved) {
+        document.documentElement.setAttribute('data-theme', saved);
+      } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    }
+
+    // ===== Events =====
+    function setupEvents() {
+      // Toggle sidebar
+      document.getElementById('toggleSidebar').addEventListener('click', () => {
+        document.getElementById('sidebar').classList.toggle('collapsed');
+      });
+
+      // Toggle theme
+      document.getElementById('toggleTheme').addEventListener('click', toggleTheme);
+
+      // Scan buttons
+      document.getElementById('btnScan').addEventListener('click', rescan);
+      document.getElementById('btnSetDir').addEventListener('click', setScanDir);
+
+      // Search
+      const searchInput = document.getElementById('searchInput');
+      searchInput.addEventListener('input', (e) => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => performSearch(e.target.value), 300);
+      });
+
+      searchInput.addEventListener('focus', () => {
+        if (searchInput.value.trim()) performSearch(searchInput.value);
+      });
+
+      // Close search results on outside click
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.search-box')) {
+          document.getElementById('searchResults').classList.remove('active');
+        }
+      });
+
+      // Keyboard shortcut
+      document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+          e.preventDefault();
+          searchInput.focus();
+        }
+        if (e.key === 'Escape') {
+          document.getElementById('searchResults').classList.remove('active');
+          searchInput.blur();
+        }
+        // Ctrl/Cmd + T: 翻译
+        if ((e.ctrlKey || e.metaKey) && e.key === 't' && !e.shiftKey) {
+          e.preventDefault();
+          handleTranslate();
+        }
+      });
+
+      // 翻译按钮
+      document.getElementById('translateBtn').addEventListener('click', handleTranslate);
+
+      // Reading progress
+      document.getElementById('mainContent').addEventListener('scroll', updateActiveTOC);
+    }
+
+    // ===== Translation =====
+    let translateMode = localStorage.getItem('translateMode') || 'api';
+
+    function initTranslateMode() {
+      const select = document.getElementById('translateMode');
+      select.value = translateMode;
+      updateLlmSettingsVisibility();
+
+      select.addEventListener('change', (e) => {
+        translateMode = e.target.value;
+        localStorage.setItem('translateMode', translateMode);
+        updateLlmSettingsVisibility();
+      });
+
+      // LLM Settings button
+      document.getElementById('btnLlmSettings').addEventListener('click', openLlmSettings);
+      document.getElementById('btnCloseLlm').addEventListener('click', closeLlmSettings);
+      document.getElementById('btnSaveLlm').addEventListener('click', saveLlmSettings);
+      document.getElementById('btnRefreshLlm').addEventListener('click', refreshLlmStatus);
+      document.getElementById('llmModalOverlay').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeLlmSettings();
+      });
+    }
+
+    function updateLlmSettingsVisibility() {
+      const btn = document.getElementById('btnLlmSettings');
+      if (translateMode === 'llm') {
+        btn.classList.add('visible');
+      } else {
+        btn.classList.remove('visible');
+      }
+    }
+
+    async function openLlmSettings() {
+      document.getElementById('llmModalOverlay').classList.add('visible');
+      // Load current config
+      try {
+        const res = await fetch('/api/llm-config');
+        const config = await res.json();
+        document.getElementById('llmBaseUrl').value = config.baseUrl || '';
+        document.getElementById('llmApiKey').value = config.apiKey || '';
+      } catch (e) {
+        console.error('Failed to load LLM config:', e);
+      }
+      refreshLlmStatus();
+    }
+
+    function closeLlmSettings() {
+      document.getElementById('llmModalOverlay').classList.remove('visible');
+    }
+
+    async function refreshLlmStatus() {
+      const statusEl = document.getElementById('llmStatusText');
+      const modelSelect = document.getElementById('llmModelSelect');
+      statusEl.innerHTML = '<span class="status-dot checking"></span>检测中...';
+
+      try {
+        const res = await fetch('/api/llm-status');
+        const status = await res.json();
+
+        if (status.available) {
+          statusEl.innerHTML = `<span class="status-dot online"></span>已连接 (${status.models.length} 个模型)`;
+          // Update model selector
+          modelSelect.innerHTML = '<option value="">自动选择</option>';
+          status.models.forEach((m) => {
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.textContent = m;
+            if (m === status.currentModel) opt.selected = true;
+            modelSelect.appendChild(opt);
+          });
+        } else {
+          statusEl.innerHTML = `<span class="status-dot offline"></span>未连接 - ${status.error || '请启动 LM Studio'}`;
+          modelSelect.innerHTML = '<option value="">无可用模型</option>';
+        }
+      } catch (e) {
+        statusEl.innerHTML = '<span class="status-dot offline"></span>检测失败';
+      }
+    }
+
+    async function saveLlmSettings() {
+      const config = {
+        baseUrl: document.getElementById('llmBaseUrl').value.trim(),
+        apiKey: document.getElementById('llmApiKey').value.trim(),
+        model: document.getElementById('llmModelSelect').value,
+      };
+
+      try {
+        await fetch('/api/llm-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config),
+        });
+        closeLlmSettings();
+      } catch (e) {
+        alert('保存失败: ' + e.message);
+      }
+    }
+
+    function updateTranslateBtn(state) {
+      const btn = document.getElementById('translateBtn');
+      const btnText = document.getElementById('translateBtnText');
+      const group = document.getElementById('translateGroup');
+
+      if (currentPath) {
+        group.classList.add('visible');
+      } else {
+        group.classList.remove('visible');
+      }
+
+      btn.classList.remove('translating', 'translated');
+
+      switch (state) {
+        case 'ready':
+          btnText.textContent = '翻译为中文';
+          btn.disabled = false;
+          btn.title = '一键翻译为中文 (Ctrl+T)';
+          break;
+        case 'translating':
+          btnText.innerHTML = '<span class="spinner"></span> 翻译中...';
+          btn.classList.add('translating');
+          btn.disabled = true;
+          break;
+        case 'translated':
+          btnText.textContent = '已翻译 ✓';
+          btn.classList.add('translated');
+          btn.disabled = false;
+          btn.title = '点击恢复原文';
+          break;
+      }
+    }
+
+    async function handleTranslate() {
+      if (!currentPath || !originalMarkdown) return;
+
+      // 如果已翻译，点击恢复原文
+      if (isTranslated) {
+        restoreOriginal();
+        return;
+      }
+
+      updateTranslateBtn('translating');
+
+      // 显示翻译状态栏
+      const translateBar = document.getElementById('translateBar');
+      const translateInfo = document.getElementById('translateInfo');
+      if (translateBar) {
+        translateBar.classList.add('visible');
+        translateInfo.innerHTML = '⏳ 正在翻译，请稍候...';
+      }
+
+      try {
+        const res = await fetch('/api/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: originalMarkdown, mode: translateMode }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || '翻译失败');
+        }
+
+        const data = await res.json();
+        const html = marked.parse(data.translated);
+
+        const markdownBody = document.getElementById('markdownBody');
+        if (markdownBody) {
+          markdownBody.innerHTML = html;
+          markdownBody.style.animation = 'none';
+          void markdownBody.offsetHeight; // trigger reflow
+          markdownBody.style.animation = 'fadeIn 0.3s ease';
+        }
+
+        isTranslated = true;
+        updateTranslateBtn('translated');
+
+        const providerName = translateMode === 'llm' ? '本地大模型 (LM Studio)' : '在线翻译 API';
+        if (translateInfo) {
+          translateInfo.innerHTML = `🌐 已翻译为中文（由 ${providerName} 提供）`;
+        }
+
+        // 重建目录
+        buildTOC();
+
+      } catch (e) {
+        console.error('Translation failed:', e);
+        updateTranslateBtn('ready');
+        if (translateInfo) {
+          translateInfo.innerHTML = `❌ 翻译失败: ${e.message}`;
+          setTimeout(() => {
+            translateBar.classList.remove('visible');
+          }, 3000);
+        }
+      }
+    }
+
+    function restoreOriginal() {
+      if (!originalMarkdown) return;
+
+      const html = marked.parse(originalMarkdown);
+      const markdownBody = document.getElementById('markdownBody');
+      if (markdownBody) {
+        markdownBody.innerHTML = html;
+        markdownBody.style.animation = 'none';
+        void markdownBody.offsetHeight;
+        markdownBody.style.animation = 'fadeIn 0.3s ease';
+      }
+
+      isTranslated = false;
+      updateTranslateBtn('ready');
+
+      const translateBar = document.getElementById('translateBar');
+      if (translateBar) {
+        translateBar.classList.remove('visible');
+      }
+
+      buildTOC();
+    }
+  </script>
+</body>
+</html>
