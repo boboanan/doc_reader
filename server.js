@@ -31,12 +31,10 @@ let scanDir = path.resolve(
   customScanDir || process.env.DOC_READER_SCAN_DIR || path.join(__dirname, ".."),
 );
 
-// docRoots: { projectName: absolutePathToDocDir }
-// 存储扫描结果，项目名 -> doc 目录的绝对路径
-let docRoots = {};
+let markdownFileCount = 0;
 
 // 初始扫描
-scanForDocs(scanDir);
+scanForMarkdown(scanDir);
 
 // 静态文件服务
 app.use("/static", express.static(path.join(__dirname, "public")));
@@ -57,31 +55,25 @@ app.post("/api/config", (req, res) => {
     return res.status(400).json({ error: "目录不存在: " + resolved });
   }
   scanDir = resolved;
-  scanForDocs(scanDir);
-  res.json({ ok: true, scanDir, projects: Object.keys(docRoots) });
+  scanForMarkdown(scanDir);
+  res.json({ ok: true, scanDir, markdownCount: markdownFileCount });
 });
 
 // API: 手动触发重新扫描
 app.post("/api/scan", (req, res) => {
   try {
-    scanForDocs(scanDir);
-    res.json({ ok: true, scanDir, projects: Object.keys(docRoots) });
+    scanForMarkdown(scanDir);
+    res.json({ ok: true, scanDir, markdownCount: markdownFileCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// API: 获取目录树（聚合所有 doc 项目）
+// API: 获取目录树（按目录嵌套组织所有 .md 文件）
 app.get("/api/tree", (req, res) => {
   try {
-    const projects = [];
-    for (const [projectName, docPath] of Object.entries(docRoots)) {
-      const tree = buildDocTree(docPath, projectName);
-      projects.push(tree);
-    }
-    // 按项目名排序
-    projects.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
-    res.json({ type: "root", children: projects });
+    const tree = buildMarkdownTree(scanDir);
+    res.json(tree);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -94,30 +86,15 @@ app.get("/api/doc", (req, res) => {
     return res.status(400).json({ error: "Missing path parameter" });
   }
 
-  // 路径格式: projectKey/path/to/file.md
-  // projectKey 可能包含 /（如 "clawdbot/Swabble"），需要匹配最长前缀
-  let matchedProject = null;
-  let docRelPath = null;
-
-  // 按 key 长度降序排，优先匹配最长前缀
-  const sortedKeys = Object.keys(docRoots).sort((a, b) => b.length - a.length);
-  for (const key of sortedKeys) {
-    if (relativePath === key || relativePath.startsWith(key + "/")) {
-      matchedProject = key;
-      docRelPath = relativePath.slice(key.length + 1); // +1 for the "/"
-      break;
-    }
+  const normalizedRelativePath = normalizeRelativePath(relativePath);
+  if (!normalizedRelativePath || !isMarkdownFile(normalizedRelativePath)) {
+    return res.status(400).json({ error: "仅支持读取 .md 文件" });
   }
 
-  if (!matchedProject) {
-    return res.status(404).json({ error: "项目不存在" });
-  }
-
-  const docRoot = docRoots[matchedProject];
-  const fullPath = path.join(docRoot, docRelPath);
+  const fullPath = path.resolve(scanDir, normalizedRelativePath);
 
   // 安全检查：防止路径遍历
-  if (!fullPath.startsWith(docRoot)) {
+  if (!isPathInside(scanDir, fullPath)) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -137,9 +114,7 @@ app.get("/api/search", (req, res) => {
   }
 
   const results = [];
-  for (const [projectName, docPath] of Object.entries(docRoots)) {
-    searchFiles(docPath, projectName, query, results);
-  }
+  searchMarkdownFiles(scanDir, query, results);
   res.json(results.slice(0, 50)); // 最多返回50条结果
 });
 
@@ -603,73 +578,56 @@ app.use((req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-/**
- * 扫描给定目录，递归查找包含 doc 子目录的文件夹
- * 找到 doc 目录后，以其相对于扫描根目录的父路径作为项目标识
- */
-function scanForDocs(baseDir) {
-  docRoots = {};
+function scanForMarkdown(baseDir) {
+  markdownFileCount = countMarkdownFiles(baseDir);
+  console.log(`📂 扫描完成，发现 ${markdownFileCount} 个 Markdown 文档`);
+}
+
+function countMarkdownFiles(baseDir) {
   if (!fs.existsSync(baseDir)) {
     console.warn(`扫描目录不存在: ${baseDir}`);
-    return;
+    return 0;
   }
-  _recursiveScan(baseDir, baseDir, 0);
-  console.log(`📂 扫描完成，发现 ${Object.keys(docRoots).length} 个文档项目:`, Object.keys(docRoots));
+  return countMarkdownRecursive(baseDir);
 }
 
-function _recursiveScan(dir, baseDir, depth) {
-  // 限制递归深度，避免扫描过深
-  if (depth > 5) return;
-
+function countMarkdownRecursive(dirPath) {
   let entries;
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries = fs.readdirSync(dirPath, { withFileTypes: true });
   } catch (e) {
-    // 无权限访问的目录跳过
-    return;
+    return 0;
   }
 
+  let count = 0;
   for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "node_modules") {
+    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      count += countMarkdownRecursive(fullPath);
       continue;
     }
-
-    const fullPath = path.join(dir, entry.name);
-
-    if (entry.name === "doc" || entry.name === "docs") {
-      // 找到 doc/docs 目录，以其相对父路径作为项目名
-      const relativeParent = path.relative(baseDir, dir);
-      const projectKey = relativeParent || path.basename(dir);
-      if (!docRoots[projectKey]) {
-        docRoots[projectKey] = fullPath;
-      }
-      // 找到 doc 后不再递归该目录的子目录
-      continue;
+    if (entry.isFile() && isMarkdownFile(entry.name)) {
+      count += 1;
     }
-
-    // 继续递归搜索子目录
-    _recursiveScan(fullPath, baseDir, depth + 1);
   }
+  return count;
 }
 
 /**
- * 构建某个 doc 目录的文件树
- * @param {string} docPath - doc 目录的绝对路径
- * @param {string} projectKey - 项目标识（相对路径）
+ * 构建扫描目录下的 Markdown 嵌套树
  */
-function buildDocTree(docPath, projectKey) {
-  const children = _buildTreeRecursive(docPath, projectKey);
-  // 显示名：取最后一段路径作为名称
-  const displayName = projectKey.includes("/") ? projectKey : projectKey;
+function buildMarkdownTree(baseDir) {
+  const children = buildTreeRecursive(baseDir, "");
   return {
-    name: displayName,
-    type: "folder",
-    path: projectKey,
+    type: "root",
+    name: path.basename(baseDir) || baseDir,
+    path: "",
     children,
   };
 }
 
-function _buildTreeRecursive(dirPath, prefix) {
+function buildTreeRecursive(dirPath, relativePrefix) {
   let entries;
   try {
     entries = fs.readdirSync(dirPath, { withFileTypes: true });
@@ -679,12 +637,12 @@ function _buildTreeRecursive(dirPath, prefix) {
 
   const items = [];
   for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
+    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const fullPath = path.join(dirPath, entry.name);
-    const relativePath = prefix + "/" + entry.name;
+    const relativePath = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name;
 
     if (entry.isDirectory()) {
-      const children = _buildTreeRecursive(fullPath, relativePath);
+      const children = buildTreeRecursive(fullPath, relativePath);
       if (children.length > 0) {
         items.push({
           name: entry.name,
@@ -693,7 +651,7 @@ function _buildTreeRecursive(dirPath, prefix) {
           children,
         });
       }
-    } else if (entry.isFile() && entry.name.endsWith(".md")) {
+    } else if (entry.isFile() && isMarkdownFile(entry.name)) {
       items.push({
         name: entry.name.replace(/\.md$/, ""),
         type: "file",
@@ -712,13 +670,13 @@ function _buildTreeRecursive(dirPath, prefix) {
 }
 
 /**
- * 在某个 doc 目录中递归搜索文件内容
+ * 在扫描目录中递归搜索 Markdown 文件内容
  */
-function searchFiles(docPath, projectName, query, results) {
-  _searchRecursive(docPath, projectName, query, results);
+function searchMarkdownFiles(baseDir, query, results) {
+  searchRecursive(baseDir, "", query, results);
 }
 
-function _searchRecursive(dirPath, prefix, query, results) {
+function searchRecursive(dirPath, relativePrefix, query, results) {
   let entries;
   try {
     entries = fs.readdirSync(dirPath, { withFileTypes: true });
@@ -727,13 +685,13 @@ function _searchRecursive(dirPath, prefix, query, results) {
   }
 
   for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
+    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const fullPath = path.join(dirPath, entry.name);
-    const relativePath = prefix + "/" + entry.name;
+    const relativePath = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name;
 
     if (entry.isDirectory()) {
-      _searchRecursive(fullPath, relativePath, query, results);
-    } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      searchRecursive(fullPath, relativePath, query, results);
+    } else if (entry.isFile() && isMarkdownFile(entry.name)) {
       const content = fs.readFileSync(fullPath, "utf-8");
       const lowerContent = content.toLowerCase();
       const index = lowerContent.indexOf(query);
@@ -749,7 +707,6 @@ function _searchRecursive(dirPath, prefix, query, results) {
         results.push({
           path: relativePath,
           name: entry.name.replace(/\.md$/, ""),
-          project: prefix.split("/")[0],
           snippet: snippet.replace(/\n/g, " "),
         });
       }
@@ -757,9 +714,27 @@ function _searchRecursive(dirPath, prefix, query, results) {
   }
 }
 
+function isPathInside(parentPath, targetPath) {
+  const relative = path.relative(parentPath, targetPath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function normalizeRelativePath(relativePath) {
+  if (typeof relativePath !== "string") return "";
+  return relativePath
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter((segment) => segment && segment !== ".")
+    .join("/");
+}
+
+function isMarkdownFile(fileName) {
+  return typeof fileName === "string" && fileName.toLowerCase().endsWith(".md");
+}
+
 app.listen(PORT, () => {
   console.log(`📖 Doc Reader 启动成功！`);
   console.log(`   访问地址: http://localhost:${PORT}`);
   console.log(`   扫描目录: ${scanDir}`);
-  console.log(`   文档项目: ${Object.keys(docRoots).join(", ") || "无"}`);
+  console.log(`   Markdown 数量: ${markdownFileCount}`);
 });
